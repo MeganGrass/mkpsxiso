@@ -40,6 +40,11 @@ namespace global
 	fs::path LBAheaderFile;
 	fs::path ImageName;
 
+	fs::path FileCode;
+	fs::path RE1LBA;
+	fs::path RE2LBA;
+	fs::path REText;
+
 	std::optional<fs::path> cuefile;
 	int			NoIsoGen = false;
 	fs::path RebuildXMLScript;
@@ -89,6 +94,10 @@ int Main(int argc, char* argv[])
 		"  <xml>\t\tFile name of disc image project in XML document format\n\n"
 		"  -lba\t\tGenerate a log of file LBA locations in disc image\n"
 		"  -lbahead\tGenerate a C header of file LBA locations in disc image\n"
+		"  -filecode\tGenerate a C header of file numbers as they are located on disc\n"
+		"  -re1lba\tGenerate a C header of LBA data for Resident Evil games\n"
+		"  -re2lba\tGenerate a C header of LBA data for Resident Evil games\n"
+		"  -retext\tGenerate a parsable text file of LBA data for Resident Evil games\n"
 		"  -noisogen\tDo not generate ISO, but calculate file LBA locations only\n"
 		"\t\t(for use with -lba or -lbahead)\n"
 		"  -noxa\t\tDo not generate CD-XA extended file attributes (plain ISO9660)\n"
@@ -124,6 +133,26 @@ int Main(int argc, char* argv[])
 					continue;
 				}
 				global::LBAheaderFile = *lbaHead;
+				continue;
+			}
+			if (auto filecode = ParsePathArgument(args, "filecode"); filecode.has_value())
+			{
+				global::FileCode = *filecode;
+				continue;
+			}
+			if (auto re1lba = ParsePathArgument(args, "re1lba"); re1lba.has_value())
+			{
+				global::RE1LBA = *re1lba;
+				continue;
+			}
+			if (auto re2lba = ParsePathArgument(args, "re2lba"); re2lba.has_value())
+			{
+				global::RE2LBA = *re2lba;
+				continue;
+			}
+			if (auto retext = ParsePathArgument(args, "retext"); retext.has_value())
+			{
+				global::REText = *retext;
 				continue;
 			}
 			if (ParseArgument(args, "noisogen"))
@@ -739,6 +768,98 @@ int Main(int argc, char* argv[])
 				{
 					printf( "Failed to write LBA listing header %" PRFILESYSTEM_PATH ".\n\n",
 						global::LBAheaderFile.lexically_normal().c_str() );
+				}
+			}
+		}
+
+		if (!global::FileCode.empty())
+		{
+			FILE* fp = OpenFile(global::FileCode, "w");
+			if (fp != nullptr)
+			{
+				dirTree->FileCode(fp, 0);
+
+				fclose(fp);
+
+				if (!global::QuietMode)
+				{
+					printf("Wrote file file code listing header %" PRFILESYSTEM_PATH "\n\n", global::FileCode.lexically_normal().c_str());
+				}
+			}
+			else
+			{
+				if (!global::QuietMode)
+				{
+					printf("Failed to write file code listing header %" PRFILESYSTEM_PATH "\n\n", global::FileCode.lexically_normal().c_str());
+				}
+			}
+		}
+
+		if (!global::RE1LBA.empty())
+		{
+			FILE* fp = OpenFile(global::RE1LBA, "w");
+			if (fp != nullptr)
+			{
+				dirTree->Resident_Evil_1_LBA(fp, 0);
+
+				fclose(fp);
+
+				if (!global::QuietMode)
+				{
+					printf("Wrote file Resident Evil 1 fpos header %" PRFILESYSTEM_PATH "\n\n", global::RE1LBA.lexically_normal().c_str());
+				}
+			}
+			else
+			{
+				if (!global::QuietMode)
+				{
+					printf("Failed to write Resident Evil 1 fpos header %" PRFILESYSTEM_PATH "\n\n", global::RE1LBA.lexically_normal().c_str());
+				}
+			}
+		}
+
+		if (!global::RE2LBA.empty())
+		{
+			FILE* fp = OpenFile(global::RE2LBA, "w");
+			if (fp != nullptr)
+			{
+				dirTree->Resident_Evil_2_LBA(fp, 0);
+
+				fclose(fp);
+
+				if (!global::QuietMode)
+				{
+					printf("Wrote file Resident Evil 2 fpos header %" PRFILESYSTEM_PATH "\n\n", global::RE2LBA.lexically_normal().c_str());
+				}
+			}
+			else
+			{
+				if (!global::QuietMode)
+				{
+					printf("Failed to write Resident Evil 2 fpos header %" PRFILESYSTEM_PATH "\n\n", global::RE2LBA.lexically_normal().c_str());
+				}
+			}
+		}
+
+		if (!global::REText.empty())
+		{
+			FILE* fp = OpenFile(global::REText, "w");
+			if (fp != nullptr)
+			{
+				dirTree->Resident_Evil_Text(fp, 0);
+
+				fclose(fp);
+
+				if (!global::QuietMode)
+				{
+					printf("Wrote file custom Resident Evil parsable text %" PRFILESYSTEM_PATH "\n\n", global::REText.lexically_normal().c_str());
+				}
+			}
+			else
+			{
+				if (!global::QuietMode)
+				{
+					printf("Failed to write custom Resident Evil parsable text %" PRFILESYSTEM_PATH "\n\n", global::REText.lexically_normal().c_str());
 				}
 			}
 		}

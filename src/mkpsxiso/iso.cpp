@@ -14,6 +14,367 @@
 
 char rootname[] = { "<root>" };
 
+struct RE1FilePos
+{
+	std::uint16_t sector;
+	std::uint16_t pad0;
+	unsigned long size;
+	std::uint8_t sec_high;
+	std::uint8_t sum;
+	std::uint16_t pad1;
+};
+struct RE2FilePos
+{
+	unsigned long size;
+	std::uint16_t sector;
+	std::uint8_t sec_high;
+	std::uint8_t sum;
+};
+std::int32_t REFileCount = 0;
+bool REParseComplete = false;
+
+static std::uint8_t Resident_Evil_FileChecksum(std::uint8_t* _Buffer, std::int64_t _ElementSize)
+{
+	std::uint8_t Checksum = 0;
+	for (std::int64_t i = 0; i < _ElementSize; i += 512) { Checksum ^= _Buffer[i]; }
+	return Checksum;
+}
+
+void iso::DirTreeClass::FileCode(FILE* _File, int level) const
+{
+	if (level == 0)
+	{
+		REFileCount = 0;
+		fprintf(_File, "#ifndef\t\t_FILECODE_H_\n");
+		fprintf(_File, "#define\t\t_FILECODE_H_\n\n");
+	}
+
+	for (const auto& e : entriesInDir)
+	{
+		const DIRENTRY& entry = e.get();
+		if (entry.type == EntryType::EntryDir)
+		{
+			entry.subdir->FileCode(_File, level + 1);
+		}
+	}
+
+	for (const auto& e : entriesInDir)
+	{
+		const DIRENTRY& dirEntry = e.get();
+
+		if (!dirEntry.id.empty() && dirEntry.type != EntryType::EntryDir)
+		{
+			std::string Filename = dirEntry.srcfile.generic_string();
+
+			for (char& ch : Filename)
+			{
+				ch = std::toupper(ch);
+
+				if (ch == ';')
+				{
+					ch = '\0';
+					break;
+				}
+			}
+
+			if (dirEntry.srcfile.filename().compare("ZNULL.WAV") == 0) { REParseComplete = true; }
+			if (dirEntry.srcfile.filename().compare("ZNULL.DAT") == 0) { REParseComplete = true; }
+			if (dirEntry.srcfile.filename().compare("SYSTEM.CNF") == 0) { REParseComplete = true; }
+
+			if (REParseComplete)
+			{
+				continue;
+			}
+
+			std::string SrcFilename = dirEntry.srcfile.filename().generic_string();
+
+			for (char& ch : SrcFilename)
+			{
+				ch = std::toupper(ch);
+
+				if (ch == '.')
+				{
+					ch = '_';
+				}
+			}
+
+			fprintf(_File, "#define\t%s\t\t%d\n", SrcFilename.c_str(), REFileCount);
+
+			REFileCount++;
+		}
+	}
+
+	if (level == 0)
+	{
+		fprintf(_File, "\n#define\t%s\t\t%d\n", "MAX_FILE", REFileCount);
+		fprintf(_File, "\n#endif");
+	}
+}
+
+void iso::DirTreeClass::Resident_Evil_1_LBA(FILE* _File, int level) const
+{
+	if (level == 0)
+	{
+		REFileCount = 0;
+		fprintf(_File, "struct fpos\n");
+		fprintf(_File, "{\n");
+		fprintf(_File, "\tunsigned short sector;\n");
+		fprintf(_File, "\tunsigned short pad0;\n");
+		fprintf(_File, "\tunsigned long size;\n");
+		fprintf(_File, "\tunsigned char sec_high;\n");
+		fprintf(_File, "\tunsigned char sum;\n");
+		fprintf(_File, "\tunsigned short pad1;\n");
+		fprintf(_File, "};\n\n");
+		fprintf(_File, "fpos\t\tfloc[] = {\n");
+	}
+
+	for (const auto& e : entriesInDir)
+	{
+		const DIRENTRY& entry = e.get();
+		if (entry.type == EntryType::EntryDir)
+		{
+			entry.subdir->Resident_Evil_1_LBA(_File, level + 1);
+		}
+	}
+
+	for (const auto& e : entriesInDir)
+	{
+		const DIRENTRY& dirEntry = e.get();
+
+		if (!dirEntry.id.empty() && dirEntry.type != EntryType::EntryDir)
+		{
+			std::string Filename = dirEntry.srcfile.generic_string();
+
+			for (char& ch : Filename)
+			{
+				ch = std::toupper(ch);
+
+				if (ch == ';')
+				{
+					ch = '\0';
+					break;
+				}
+			}
+
+			if (dirEntry.srcfile.filename().compare("ZNULL.WAV") == 0) { REParseComplete = true; }
+			if (dirEntry.srcfile.filename().compare("ZNULL.DAT") == 0) { REParseComplete = true; }
+			if (dirEntry.srcfile.filename().compare("SYSTEM.CNF") == 0) { REParseComplete = true; }
+
+			if (REParseComplete)
+			{
+				continue;
+			}
+
+			RE1FilePos fpos = { 0, 0, 0, 0, 0, 0 };
+
+			std::uint8_t Sum = 0;
+			FILE* File = OpenFile(Filename.c_str(), "rb");
+			if (!File)
+			{
+				printf("Resident_Evil_1_LBA: Could not locate file %s\n", Filename.c_str());
+			}
+			else
+			{
+				if (dirEntry.srcfile.extension().compare(".EXE") == 0)
+				{
+					std::uint8_t* _Buffer = new std::uint8_t[(dirEntry.length - 0x800)];
+					_fseeki64(File, 0x800, SEEK_SET);
+					fread_s(_Buffer, (dirEntry.length - 0x800), (dirEntry.length - 0x800), 1, File);
+					fclose(File);
+					Sum = Resident_Evil_FileChecksum(_Buffer, (dirEntry.length - 0x800));
+					delete[]_Buffer;
+				}
+				else
+				{
+					std::uint8_t* _Buffer = new std::uint8_t[dirEntry.length];
+					_fseeki64(File, 0x00, SEEK_SET);
+					fread_s(_Buffer, dirEntry.length, dirEntry.length, 1, File);
+					fclose(File);
+					Sum = Resident_Evil_FileChecksum(_Buffer, dirEntry.length);
+					delete[]_Buffer;
+				}
+
+				fpos = { static_cast<std::uint16_t>(dirEntry.lba), 0, static_cast<unsigned long>(dirEntry.length), static_cast<std::uint8_t>(dirEntry.lba >> 16), Sum, 0 };
+			}
+
+			fprintf(_File, "\t{ 0x%08X, %d, 0x%04X, 0x%02X, 0x%02X, %d },", fpos.sector, fpos.pad0, fpos.size, fpos.sec_high, fpos.sum, fpos.pad1);
+			fprintf(_File, "\t/* %s:%d */\n", dirEntry.srcfile.filename().string().c_str(), (int)REFileCount);
+
+			REFileCount++;
+		}
+	}
+
+	if (level == 0)
+	{
+		fprintf(_File, "};");
+	}
+}
+
+void iso::DirTreeClass::Resident_Evil_2_LBA(FILE* _File, int level) const
+{
+	if (level == 0)
+	{
+		REFileCount = 0;
+		fprintf(_File, "struct fpos\n");
+		fprintf(_File, "{\n");
+		fprintf(_File, "\tunsigned long size;\n");
+		fprintf(_File, "\tunsigned short sector;\n");
+		fprintf(_File, "\tunsigned char sec_high;\n");
+		fprintf(_File, "\tunsigned char sum;\n");
+		fprintf(_File, "};\n\n");
+		fprintf(_File, "fpos\t\tfloc[] = {\n");
+	}
+
+	for (const auto& e : entriesInDir)
+	{
+		const DIRENTRY& entry = e.get();
+		if (entry.type == EntryType::EntryDir)
+		{
+			entry.subdir->Resident_Evil_2_LBA(_File, level + 1);
+		}
+	}
+
+	for (const auto& e : entriesInDir)
+	{
+		const DIRENTRY& dirEntry = e.get();
+
+		if (!dirEntry.id.empty() && dirEntry.type != EntryType::EntryDir)
+		{
+			std::string Filename = dirEntry.srcfile.generic_string();
+
+			for (char& ch : Filename)
+			{
+				ch = std::toupper(ch);
+
+				if (ch == ';')
+				{
+					ch = '\0';
+					break;
+				}
+			}
+
+			if (dirEntry.srcfile.filename().compare("ZNULL.WAV") == 0) { REParseComplete = true; }
+			if (dirEntry.srcfile.filename().compare("ZNULL.DAT") == 0) { REParseComplete = true; }
+			if (dirEntry.srcfile.filename().compare("SYSTEM.CNF") == 0) { REParseComplete = true; }
+
+			if (REParseComplete)
+			{
+				continue;
+			}
+
+			RE2FilePos fpos = { 0, 0, 0, 0 };
+
+			std::uint8_t Sum = 0;
+			FILE* File = OpenFile(Filename.c_str(), "rb");
+			if (!File)
+			{
+				printf("Resident_Evil_2_LBA: Could not locate file %s\n", Filename.c_str());
+			}
+			else
+			{
+				std::uint8_t* _Buffer = new std::uint8_t[dirEntry.length];
+				_fseeki64(File, 0x00, SEEK_SET);
+				fread_s(_Buffer, dirEntry.length, dirEntry.length, 1, File);
+				fclose(File);
+				Sum = Resident_Evil_FileChecksum(_Buffer, dirEntry.length);
+				delete[]_Buffer;
+
+				fpos = { static_cast<unsigned long>(dirEntry.length), static_cast<std::uint16_t>(dirEntry.lba), static_cast<std::uint8_t>(dirEntry.lba >> 16), Sum };
+			}
+
+			fprintf(_File, "\t{ 0x%08X, 0x%04X, 0x%02X, 0x%02X },", fpos.size, fpos.sector, fpos.sec_high, fpos.sum);
+			fprintf(_File, "\t/* %s:%d */\n", dirEntry.srcfile.filename().string().c_str(), (int)REFileCount);
+
+			REFileCount++;
+		}
+	}
+
+	if (level == 0)
+	{
+		fprintf(_File, "};");
+	}
+}
+
+void iso::DirTreeClass::Resident_Evil_Text(FILE* _File, int level) const
+{
+	if (level == 0)
+	{
+		REFileCount = 0;
+	}
+
+	for (const auto& e : entriesInDir)
+	{
+		const DIRENTRY& entry = e.get();
+		if (entry.type == EntryType::EntryDir)
+		{
+			entry.subdir->Resident_Evil_Text(_File, level + 1);
+		}
+	}
+
+	for (const auto& e : entriesInDir)
+	{
+		const DIRENTRY& dirEntry = e.get();
+
+		if (!dirEntry.id.empty() && dirEntry.type != EntryType::EntryDir)
+		{
+
+			if (dirEntry.srcfile.filename().compare("ZNULL.WAV") == 0) { REParseComplete = true; }
+			if (dirEntry.srcfile.filename().compare("ZNULL.DAT") == 0) { REParseComplete = true; }
+			if (dirEntry.srcfile.filename().compare("SYSTEM.CNF") == 0) { REParseComplete = true; }
+
+			if (REParseComplete)
+			{
+				continue;
+			}
+
+			std::string Filename = dirEntry.srcfile.lexically_normal().string();
+
+			for (char& ch : Filename)
+			{
+				ch = std::toupper(ch);
+
+				if (ch == ';')
+				{
+					ch = '\0';
+					break;
+				}
+
+				if (ch == '\\')
+				{
+					ch = '/';
+				}
+			}
+
+			std::uint8_t Sum = 0;
+			FILE* File = OpenFile(Filename.c_str(), "rb");
+			if (!File)
+			{
+				printf("Resident_Evil_Text: Could not locate file %s\n", Filename.c_str());
+			}
+			else
+			{
+				std::uint8_t* _Buffer = new std::uint8_t[dirEntry.length];
+				_fseeki64(File, 0x00, SEEK_SET);
+				fread_s(_Buffer, dirEntry.length, dirEntry.length, 1, File);
+				fclose(File);
+				Sum = Resident_Evil_FileChecksum(_Buffer, dirEntry.length);
+				delete[]_Buffer;
+			}
+
+			fprintf(_File, "\"%s\"\t\t0x%llX\t\t0x%lX\t\t0x%02X\n", Filename.c_str(), dirEntry.length, dirEntry.lba, Sum);
+			//fprintf(fp, "%" PRFILESYSTEM_PATH, entry.srcfile.lexically_normal().c_str());
+
+			REFileCount++;
+		}
+	}
+
+	if (level == 0)
+	{
+	}
+}
+
+
+
 static bool icompare_func(unsigned char a, unsigned char b)
 {
 	return std::tolower( a ) == std::tolower( b );

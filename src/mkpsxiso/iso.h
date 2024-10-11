@@ -179,6 +179,14 @@ namespace iso
 		int GetDirCountTotal() const;
 
 		void OutputLBAlisting(FILE* fp, int level) const;
+
+		void FileCode(FILE* _File, int level) const;
+
+		void Resident_Evil_1_LBA(FILE* _File, int level) const;
+
+		void Resident_Evil_2_LBA(FILE* _File, int level) const;
+
+		void Resident_Evil_Text(FILE* _File, int level) const;
 	};
 
 	void WriteLicenseData(cd::IsoWriter* writer, void* data);

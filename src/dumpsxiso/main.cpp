@@ -1280,5 +1280,108 @@ int Main(int argc, char *argv[])
 	printf("Output directory : %" PRFILESYSTEM_PATH "\n", param::outPath.lexically_normal().c_str());
 
     ParseISO(reader);
+
+	// reset (for when used as lib)
+	param::isoFile.clear();
+	param::outPath.clear();
+	param::xmlFile.clear();
+	param::outputSortedByDir = false;
+	param::pathTable = false;
+	param::encodingFormat = EAF_WAV;
+
 	return EXIT_SUCCESS;
+}
+
+// 
+CHAR** dumpsxisoCommandLine(ULONG& nArgs, CONST CHAR* _Format, ...) {
+
+	// http://alter.org.ua/docs/win/args/
+
+	// Format
+	va_list _ArgList = { NULL };
+	__crt_va_start(_ArgList, _Format);
+	INT StringSize = (_vscprintf(_Format, _ArgList) + 1);
+	CHAR* _Buffer = new CHAR[StringSize];
+	RtlSecureZeroMemory(_Buffer, StringSize);
+	vsprintf_s(_Buffer, StringSize, _Format, _ArgList);
+	__crt_va_end(_ArgList);
+
+	// Error
+	nArgs = NULL;
+	if (!strlen(_Buffer)) { delete[] _Buffer; return NULL; }
+
+	// Setup
+	size_t i = ((StringSize + 2) / 2) * sizeof(PVOID) + sizeof(PVOID);
+	PCHAR* argv = (PCHAR*)GlobalAlloc(GMEM_FIXED, i + (StringSize + 2) * sizeof(CHAR));
+	PCHAR _argv = (PCHAR)(((PUCHAR)argv) + i);
+	if (_argv && argv) { argv[NULL] = _argv; }
+	else { delete[] _Buffer; return NULL; }
+
+	// Local
+	CHAR a = '\0';
+	size_t j = i = NULL;
+	BOOLEAN in_QM = FALSE;
+	BOOLEAN in_TEXT = FALSE;
+	BOOLEAN in_SPACE = TRUE;
+
+	// Parse
+	while (_Buffer[i]) {
+		a = _Buffer[i];
+		if (in_QM) {
+			if (a == '\"') { in_QM = FALSE; }
+			else { _argv[j] = a; j++; }
+		}
+		else {
+			switch (a) {
+			case '\"':
+				in_QM = TRUE;
+				in_TEXT = TRUE;
+				if (in_SPACE) {
+					argv[nArgs] = _argv + j;
+					nArgs++;
+				}
+				in_SPACE = FALSE;
+				break;
+			case ' ':
+			case '\t':
+			case '\n':
+			case '\r':
+				if (in_TEXT) {
+					_argv[j] = '\0';
+					j++;
+				}
+				in_TEXT = FALSE;
+				in_SPACE = TRUE;
+				break;
+			default:
+				in_TEXT = TRUE;
+				if (in_SPACE) {
+					argv[nArgs] = _argv + j;
+					nArgs++;
+				}
+				_argv[j] = a;
+				j++;
+				in_SPACE = FALSE;
+				break;
+			}
+		}
+		i++;
+	}
+
+	// Complete
+	delete[] _Buffer;
+	_argv[j] = '\0';
+	argv[nArgs] = NULL;
+
+	// Terminate
+	return argv;
+}
+__declspec(dllexport) int dumpsxiso(char* commandline) {
+
+
+	ULONG nArgs = NULL;
+	char** argv = dumpsxisoCommandLine(nArgs, commandline);
+
+	return Main(nArgs, argv);
+
 }

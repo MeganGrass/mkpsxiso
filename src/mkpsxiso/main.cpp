@@ -53,6 +53,100 @@ namespace global
 };
 
 
+int mkpsxisoMain(int argc, char* argv[]);
+
+CHAR** mkpsxisoCommandLine(ULONG& nArgs, CONST CHAR* _Format, ...)
+{
+	// http://alter.org.ua/docs/win/args/
+
+	// Format
+	va_list _ArgList = { NULL };
+	__crt_va_start(_ArgList, _Format);
+	INT StringSize = (_vscprintf(_Format, _ArgList) + 1);
+	CHAR* _Buffer = new CHAR[StringSize];
+	RtlSecureZeroMemory(_Buffer, StringSize);
+	vsprintf_s(_Buffer, StringSize, _Format, _ArgList);
+	__crt_va_end(_ArgList);
+
+	// Error
+	nArgs = NULL;
+	if (!strlen(_Buffer)) { delete[] _Buffer; return NULL; }
+
+	// Setup
+	size_t i = ((StringSize + 2) / 2) * sizeof(PVOID) + sizeof(PVOID);
+	PCHAR* argv = (PCHAR*)GlobalAlloc(GMEM_FIXED, i + (StringSize + 2) * sizeof(CHAR));
+	PCHAR _argv = (PCHAR)(((PUCHAR)argv) + i);
+	if (_argv && argv) { argv[NULL] = _argv; }
+	else { delete[] _Buffer; return NULL; }
+
+	// Local
+	CHAR a = '\0';
+	size_t j = i = NULL;
+	BOOLEAN in_QM = FALSE;
+	BOOLEAN in_TEXT = FALSE;
+	BOOLEAN in_SPACE = TRUE;
+
+	// Parse
+	while (_Buffer[i]) {
+		a = _Buffer[i];
+		if (in_QM) {
+			if (a == '\"') { in_QM = FALSE; }
+			else { _argv[j] = a; j++; }
+		}
+		else {
+			switch (a) {
+			case '\"':
+				in_QM = TRUE;
+				in_TEXT = TRUE;
+				if (in_SPACE) {
+					argv[nArgs] = _argv + j;
+					nArgs++;
+				}
+				in_SPACE = FALSE;
+				break;
+			case ' ':
+			case '\t':
+			case '\n':
+			case '\r':
+				if (in_TEXT) {
+					_argv[j] = '\0';
+					j++;
+				}
+				in_TEXT = FALSE;
+				in_SPACE = TRUE;
+				break;
+			default:
+				in_TEXT = TRUE;
+				if (in_SPACE) {
+					argv[nArgs] = _argv + j;
+					nArgs++;
+				}
+				_argv[j] = a;
+				j++;
+				in_SPACE = FALSE;
+				break;
+			}
+		}
+		i++;
+	}
+
+	// Complete
+	delete[] _Buffer;
+	_argv[j] = '\0';
+	argv[nArgs] = NULL;
+
+	// Terminate
+	return argv;
+}
+__declspec(dllexport) int mkpsxiso(char* commandline)
+{
+	ULONG nArgs = NULL;
+	char** argv = mkpsxisoCommandLine(nArgs, commandline);
+
+	return mkpsxisoMain(nArgs, argv);
+}
+
+
 bool ParseDirectory(iso::DirTreeClass* dirTree, const tinyxml2::XMLElement* parentElement, const fs::path& xmlPath, const EntryAttributes& parentAttribs, bool& found_da);
 int ParseISOfileSystem(const tinyxml2::XMLElement* trackElement, const fs::path& xmlPath, iso::EntryList& entries, iso::IDENTIFIERS& isoIdentifiers, int& totalLen);
 
@@ -81,7 +175,7 @@ bool UpdateDAFilesWithLBA(iso::EntryList& entries, const char *trackid, const un
 	return false;
 }
 
-int Main(int argc, char* argv[])
+int mkpsxisoMain(int argc, char* argv[])
 {
 	static constexpr const char* HELP_TEXT =
 		"mkpsxiso [-h|--help] [-y] [-q|--quiet] [-o|--output <file>] [-lba <file>]\n"
@@ -99,7 +193,7 @@ int Main(int argc, char* argv[])
 		"  -re2lba\tGenerate a C header of LBA data for Resident Evil games\n"
 		"  -retext\tGenerate a parsable text file of LBA data for Resident Evil games\n"
 		"  -noisogen\tDo not generate ISO, but calculate file LBA locations only\n"
-		"\t\t(for use with -lba or -lbahead)\n"
+		"\t\t(for use with -lba, -lbahead, -filecode, -re1lba, -re2lba and -retext)\n"
 		"  -noxa\t\tDo not generate CD-XA extended file attributes (plain ISO9660)\n"
 		"\t\t(XA data can still be included but not recommended)\n"
 		"  -rebuildxml\tRebuild the XML using our newest schema\n"
@@ -1003,6 +1097,28 @@ int Main(int argc, char* argv[])
 		projectElement = projectElement->NextSiblingElement(xml::elem::ISO_PROJECT);
 
 	}
+
+	// reset (for when used as lib)
+	global::BuildTime = 0;
+	global::xa_edc = 0;
+	global::QuietMode = false;
+	global::Overwrite = false;
+	global::trackNum = 1;
+	global::noXA = false;
+	global::new_type.reset();
+	global::volid_override.reset();
+	global::XMLscript.clear();
+	global::LBAfile.clear();
+	global::LBAheaderFile.clear();
+	global::ImageName.clear();
+	global::FileCode.clear();
+	global::RE1LBA.clear();
+	global::RE2LBA.clear();
+	global::REText.clear();
+	global::cuefile.reset();
+	global::NoIsoGen = false;
+	global::RebuildXMLScript.clear();
+	global::xmlIdFile.Clear();
 
     return 0;
 }
